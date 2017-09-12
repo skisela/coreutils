@@ -26,6 +26,8 @@
 #include "die.h"
 #include "error.h"
 #include "fadvise.h"
+#include "multibyte.h"
+#include "mbbuffer.h"
 #include "xdectoint.h"
 
 #define TAB_WIDTH 8
@@ -43,6 +45,29 @@ static bool count_bytes;
 
 /* If nonzero, at least one of the files we read was standard input. */
 static bool have_read_stdin;
+
+/* The current input file */
+static FILE *istream;
+
+/* Screen column where next char will go. */
+static size_t column = 0;
+
+/* Index in 'line_out' for next char. */
+static size_t offset_out = 0;
+
+/* The offset in line_out of the last 'blank' character.
+   Used with "-s" instead of scanning the string backwards. */
+static size_t last_blank_offset = 0;
+
+/* The value of 'column' when the last blank was found. */
+static size_t last_blank_column = 0;
+
+/* Buffer holding the currently loaded line */
+static char *line_out = NULL;
+
+/* Allocated size of 'line_out' */
+static size_t allocated_out = 0;
+
 
 static char const shortopts[] = "bsw:0::1::2::3::4::5::6::7::8::9::";
 
@@ -112,21 +137,9 @@ adjust_column (size_t column, char c)
   return column;
 }
 
-/* Fold file FILENAME, or standard input if FILENAME is "-",
-   to stdout, with maximum line length WIDTH.
-   Return true if successful.  */
-
 static bool
-fold_file (char const *filename, size_t width)
+open_stream (char const* filename)
 {
-  FILE *istream;
-  int c;
-  size_t column = 0;		/* Screen column where next char will go. */
-  size_t offset_out = 0;	/* Index in 'line_out' for next char. */
-  static char *line_out = NULL;
-  static size_t allocated_out = 0;
-  int saved_errno;
-
   if (STREQ (filename, "-"))
     {
       istream = stdin;
@@ -142,7 +155,42 @@ fold_file (char const *filename, size_t width)
     }
 
   fadvise (istream, FADVISE_SEQUENTIAL);
+  return true;
+}
 
+
+static bool
+close_stream (char const* filename, int saved_errno)
+{
+  if (ferror (istream))
+    {
+      error (0, saved_errno, "%s", quotef (filename));
+      if (!STREQ (filename, "-"))
+        fclose (istream);
+      return false;
+    }
+  if (!STREQ (filename, "-") && fclose (istream) == EOF)
+    {
+      error (0, errno, "%s", quotef (filename));
+      return false;
+    }
+
+  return true;
+}
+
+static void
+write_current_line (bool add_newline)
+{
+  if (add_newline)
+    line_out[offset_out++] = '\n';
+  fwrite (line_out, sizeof (char), offset_out, stdout);
+  column = offset_out = last_blank_offset = last_blank_column = 0;
+}
+
+static void
+fold_text (FILE *istream, size_t width, int *saved_errno)
+{
+  int c;
   while ((c = getc (istream)) != EOF)
     {
       if (offset_out + 1 >= allocated_out)
@@ -150,9 +198,7 @@ fold_file (char const *filename, size_t width)
 
       if (c == '\n')
         {
-          line_out[offset_out++] = c;
-          fwrite (line_out, sizeof (char), offset_out, stdout);
-          column = offset_out = 0;
+          write_current_line (true);
           continue;
         }
 
@@ -206,34 +252,147 @@ fold_file (char const *filename, size_t width)
               continue;
             }
 
-          line_out[offset_out++] = '\n';
-          fwrite (line_out, sizeof (char), (size_t) offset_out, stdout);
-          column = offset_out = 0;
+          write_current_line (true);
           goto rescan;
         }
 
       line_out[offset_out++] = c;
     }
 
-  saved_errno = errno;
+  *saved_errno = errno;
 
   if (offset_out)
-    fwrite (line_out, sizeof (char), (size_t) offset_out, stdout);
+    write_current_line (false);
+}
 
-  if (ferror (istream))
+/* Limited multibyte implementation:
+   1. special characters (\b \r \t) are handled as in the ASCII case.
+   2. invalid multibyte sequence is treated as 1 byte/character.
+   3. Any valid multibyte sequence is still treated as
+      character consuming width of 1.
+
+   Future improvement could use wcwidth(3) to check the real width,
+   but in many implementations wcwidth(3) does not return the actual
+   visual width consumed by the character (sometimes libc can't know
+   in advance how many spots will be consumed - only the Xterm can do it).
+
+   Also consider using iswprint(3).
+*/
+static size_t
+adjust_column_multibyte (size_t col, const struct mbbuf *mbb)
+{
+  /* This relies on the fact the 'adjust_column' does not check
+     the value of the chracter (e.g. no isblank or isprint).
+     Otherwise the content of mbb->wc needs to be checked.  */
+  const char c = (mbb->wc=='\b'||mbb->wc=='\t'||mbb->wc=='\r')
+    ? ((char)mbb->wc) : 'A';
+  return adjust_column (col, c);
+}
+
+
+static void
+fold_multibyte_text (FILE *input, size_t width, int *saved_errno)
+{
+  struct mbbuf mbb;
+  mbbuf_init (&mbb, BUFSIZ);
+
+  while (mbbuf_getchar (&mbb, input))
     {
-      error (0, saved_errno, "%s", quotef (filename));
-      if (!STREQ (filename, "-"))
-        fclose (istream);
-      return false;
-    }
-  if (!STREQ (filename, "-") && fclose (istream) == EOF)
-    {
-      error (0, errno, "%s", quotef (filename));
-      return false;
+      if (offset_out + mbb.mb_len >= allocated_out)
+        line_out = X2REALLOC (line_out, &allocated_out);
+
+      if (mbb.mb_valid && mbb.wc == '\n')
+        {
+          write_current_line (true);
+          continue;
+        }
+
+    rescan:
+      column = adjust_column_multibyte (column, &mbb);
+
+      if (column > width)
+        {
+          /* This character would make the line too long.
+             Print the line plus a newline, and make this character
+             start the next line. */
+          if (break_spaces)
+            {
+              if (last_blank_offset > 0)
+                {
+                  const size_t logical_end = last_blank_offset ;
+
+                  /* Found a blank.  Don't output the part after it. */
+                  fwrite (line_out, sizeof (char), (size_t) logical_end,
+                          stdout);
+                  putchar ('\n');
+
+                  /* Move the remainder to the beginning of the next line.
+                     The areas being copied here might overlap. */
+                  memmove (line_out, line_out + logical_end,
+                           offset_out - logical_end);
+
+                  offset_out -= last_blank_offset;
+                  column -= last_blank_column;
+                  last_blank_offset = 0 ;
+                  last_blank_column = 0 ;
+                  goto rescan;
+                }
+            }
+
+          if (offset_out == 0)
+            {
+              /* Add the multibyte sequence to the output buffer */
+              memmove (line_out + offset_out, mbb.mb_str, mbb.mb_len);
+              offset_out += mbb.mb_len ;
+              continue;
+            }
+
+          write_current_line (true);
+          goto rescan;
+        }
+
+      /* Add the multibyte sequence to the output buffer.
+         TODO: optimize for more common single-bytes? */
+      memmove (line_out + offset_out, mbb.mb_str, mbb.mb_len);
+      offset_out += mbb.mb_len ;
+
+      /* Keep track of the last encountered blank character */
+      if (break_spaces)
+        {
+          if (iswblank (mbb.wc))
+            {
+              last_blank_offset = offset_out;
+              last_blank_column = column;
+            }
+        }
     }
 
-  return true;
+  *saved_errno = errno;
+
+  if (offset_out)
+    write_current_line (false);
+}
+
+
+/* Fold file FILENAME, or standard input if FILENAME is "-",
+   to stdout, with maximum line length WIDTH.
+   Return true if successful.  */
+static bool
+fold_file (char const *filename, size_t width)
+{
+  int saved_errno;
+
+  if (!open_stream (filename))
+    return false;
+
+  if (use_multibyte ())
+    fold_multibyte_text (istream, width, &saved_errno);
+  else
+    fold_text (istream, width, &saved_errno);
+
+
+
+  return close_stream (filename, saved_errno);
 }
 
 int

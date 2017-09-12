@@ -261,6 +261,7 @@ all_tests =					\
   tests/misc/chcon-fail.sh			\
   tests/misc/coreutils.sh			\
   tests/misc/cut.pl				\
+  tests/misc/cut-multibyte.pl			\
   tests/misc/cut-huge-range.sh			\
   tests/misc/wc.pl				\
   tests/misc/wc-files0-from.pl			\
@@ -286,11 +287,13 @@ all_tests =					\
   tests/misc/dirname.pl				\
   tests/misc/env-null.sh			\
   tests/misc/expand.pl				\
+  tests/misc/expand-multibyte.pl		\
   tests/misc/expr.pl				\
   tests/misc/factor.pl				\
   tests/misc/factor-parallel.sh			\
   tests/misc/false-status.sh			\
   tests/misc/fold.pl				\
+  tests/misc/fold-multibyte.pl			\
   tests/misc/groups-dash.sh			\
   tests/misc/groups-version.sh			\
   tests/misc/head-c.sh				\
@@ -365,6 +368,7 @@ all_tests =					\
   tests/misc/sort-version.sh			\
   tests/misc/sort-NaN-infloop.sh		\
   tests/misc/sort-u-FMR.sh			\
+  tests/misc/unorm.pl				\
   tests/split/filter.sh				\
   tests/split/suffix-auto-length.sh		\
   tests/split/suffix-length.sh			\
