@@ -49,6 +49,9 @@ my $locale = $ENV{LOCALE_FR_UTF8};
 # used in multiple tests, below
 my $in_bn = "abc\xF0\x90\x8C\xBBdefg";
 
+### THORN WITH STROKE  (U+A764) - 3 octets
+my $tws = '\xEA\x9D\xA4';
+
 my @Tests =
   (
    # baseline: single-byte characters
@@ -243,6 +246,24 @@ my @Tests =
 
    # TODO: '-n -b' with test multiple ranges, test with "--output-delimiter"
 
+   # Multibyte delimeter tests
+   # $P = \xEA\x9D\xA4
+   # THORN WITH STROKE  (U+A764) - 3 octets: \xEA\x9D\xA4
+   ['mbn-newline-4', '-dꝤ', '-f1', {IN=>"aꝤ1\nbꝤ2"}, {OUT=>"a\nb\n"}],
+   ['mbn-newline-5', '-dꝤ', '-f2', {IN=>"aꝤ1\nbꝤ2\n"}, {OUT=>"1\n2\n"}],
+   ['mbn-newline-6', '-dꝤ', '-f2', {IN=>"aꝤ1\nbꝤ2"}, {OUT=>"1\n2\n"}],
+   ['mbn-newline-7', '-s', '-dꝤ', '-f1', {IN=>"aꝤ1\nbꝤ2"}, {OUT=>"a\nb\n"}],
+   ['mbn-newline-8', '-s', '-dꝤ', '-f1', {IN=>"aꝤ1\nbꝤ2\n"}, {OUT=>"a\nb\n"}],
+   ['mbn-newline-9', '-s', '-dꝤ', '-f1', {IN=>"a1\nb2"}, {OUT=>""}],
+   ['mbn-newline-10', '-s', '-dꝤ', '-f1,2', {IN=>"aꝤ1\nbꝤ2"}, {OUT=>"aꝤ1\nbꝤ2\n"}],
+   ['mbn-newline-11', '-s', '-dꝤ', '-f1,2', {IN=>"aꝤ1\nbꝤ2\n"}, {OUT=>"aꝤ1\nbꝤ2\n"}],
+   ['mbn-newline-12', '-s', '-dꝤ', '-f1', {IN=>"aꝤ1\nbꝤ"}, {OUT=>"a\nb\n"}],
+   ['mbn-newline-13', '-dꝤ', '-f1-', {IN=>"a1Ꝥ\nꝤ"}, {OUT=>"a1Ꝥ\nꝤ\n"}],
+   ['mbn-newline-22', "-dꝤ", '-f1-', {IN=>"\nb"}, {OUT=>"\nb\n"}],
+   ['mbn-newline-23', "-d'\n'", '-f1-', '--ou=Ꝥ', {IN=>"a\nb\n"}, {OUT=>"aꝤb\n"}],
+   ['mbn-newline-24', "-d'\n'", '-f1,2', '--ou=Ꝥ', {IN=>"a\nb\n"}, {OUT=>"aꝤb\n"}],
+
+
   );
 
 
@@ -271,9 +292,9 @@ if ($locale ne 'C')
                        {ERR_SUBST => "s/\xe2\x80[\x98\x99]/'/g"});
           }
 
-        # automatically trim newlines, unless using -z.
+        # automatically trim newlines, unless using -z or mb_delim tests.
         my ($params) = $t->[1];
-        if ($params !~ /-z/)
+        if ($params !~ /-z/ && $tname !~ /^mbn/)
           {
             push @$t, {OUT_SUBST => 's/[\r\n]+$//s'};
           }

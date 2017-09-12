@@ -113,6 +113,12 @@ static unsigned char delim;
 //static wchar_t wcdelim;
 #endif
 
+char *mb_delim;
+//TODO: consilidate with 'delim' above?
+#if HAVE_WCHAR_H
+//static wchar_t wcdelim;
+#endif
+
 /* The delimiter for each line/record. */
 static unsigned char line_delim = '\n';
 
@@ -611,6 +617,140 @@ cut_fields (FILE *stream)
 }
 
 static void
+cut_fields_mb (FILE *stream)
+{
+  size_t field_idx = 1;
+  bool found_any_selected_field = false;
+  bool buffer_first_field;
+
+  current_rp = frp;
+
+  struct mbbuf mbb;
+
+  //TODO: set input filename for eerror reporting
+  xmbbuf_init_file (&mbb, stream, "(input)");
+
+  /* To support the semantics of the -s flag, we may have to buffer
+     all of the first field to determine whether it is `delimited.'
+     But that is unnecessary if all non-delimited lines must be printed
+     and the first field has been selected, or if non-delimited lines
+     must be suppressed and the first field has *not* been selected.
+     That is because a non-delimited line has exactly one field.  */
+  buffer_first_field = (suppress_non_delimited ^ !print_kth (1));
+  int buflen = 0;
+
+  while(1)
+    {
+      int len = 0;
+      if (field_idx == 1 && buffer_first_field)
+        {
+          while (1)
+            {
+              if(!mbbuf_getchar (&mbb, stream))
+                {
+                  mbbuf_free(&mbb);
+                  return;
+                }
+
+              if (mbb.wc == WEOF)
+                break;
+
+              field_1_buffer = xrealloc (field_1_buffer, len + mbb.mb_len);
+              memcpy (field_1_buffer + len, mbb.mb_str, mbb.mb_len);
+              len += mbb.mb_len;
+              buflen -= mbb.mb_len;
+
+              if (mbb.mb_valid && \
+                  (mbb.wc == line_delim || !strncmp(mbb.mb_str, mb_delim, mbb.mb_len)))
+                break;
+            }
+
+          if (len <= 0 && mbb.wc == WEOF)
+            break;
+
+          /* If the first field extends to the end of line (it is not
+             delimited) and we are printing all non-delimited lines,
+             print this one.  */
+          if (!mbb.mb_valid || (mbb.mb_valid && strncmp(mbb.mb_str, mb_delim, mbb.mb_len)))
+            {
+              if (suppress_non_delimited)
+                {
+                  /* Empty.        */
+                }
+              else
+                {
+                  fwrite (field_1_buffer, sizeof (char), len, stdout);
+                  /* Make sure the output line is newline terminated.  */
+                  if (!mbb.mb_valid || (mbb.mb_valid && mbb.wc != line_delim))
+                      putchar (line_delim);
+                }
+              continue;
+            }
+          if (print_kth (1))
+            {
+              /* Print the field, but not the trailing delimiter.  */
+              fwrite (field_1_buffer, sizeof (char), len - mbb.mb_len, stdout);
+              found_any_selected_field = true;
+            }
+          next_item (&field_idx);
+        }
+
+      if(found_any_selected_field && print_kth(field_idx))
+        /* mb_delim was found during searching field 1 */
+        {
+          fwrite (output_delimiter_string, sizeof (char),
+                  output_delimiter_length, stdout);
+          found_any_selected_field = false;
+          continue;
+        }
+
+      if(!mbbuf_getchar (&mbb, stream))
+        {
+          if(mbb.wc != line_delim)
+            putchar(line_delim);
+          mbbuf_free(&mbb);
+          return;
+        }
+
+      if (mbb.mb_len > 1)
+        {
+          if(!strncmp(mbb.mb_str, mb_delim, mbb.mb_len))
+            /* mb_delim found */
+          {
+            if (print_kth(field_idx))
+              found_any_selected_field = true;
+            next_item(&field_idx);
+          }
+        }
+
+      if (print_kth(field_idx))
+        {
+          if(found_any_selected_field)
+            /* print mb_delim */
+            {
+              fwrite (output_delimiter_string, sizeof (char),
+                      output_delimiter_length, stdout);
+            }
+          else if((line_delim != mbb.wc) &&
+                  strncmp(mbb.mb_str, mb_delim, mbb.mb_len))
+            /* print regular character */
+            {
+              fwrite(mbb.mb_str, sizeof (char),
+                     mbb.mb_len, stdout);
+            }
+        }
+
+      if (line_delim == mbb.wc)
+        {
+          putchar( line_delim );
+          field_idx = 1;
+          current_rp = frp;
+        }
+      found_any_selected_field = false;
+    }
+}
+
+static void
 cut_stream (FILE *stream)
 {
   if (operating_mode == byte_mode)
@@ -623,7 +763,11 @@ cut_stream (FILE *stream)
   else if (operating_mode == character_mode)
     cut_characters (stream);
   else
+
+  if (!mb_delim)
     cut_fields (stream);
+  else
+    cut_fields_mb (stream);
 }
 
 /* Process file FILE to standard output.
@@ -724,7 +868,13 @@ main (int argc, char **argv)
           /* New delimiter. */
           /* Interpret -d '' to mean 'use the NUL byte as the delimiter.'  */
           if (optarg[0] != '\0' && optarg[1] != '\0')
-            FATAL_ERROR (_("the delimiter must be a single character"));
+            {
+              if (MB_CUR_MAX == 1 || (strlen(optarg) > MB_CUR_MAX))
+                FATAL_ERROR (_("the delimiter must be a single character"));
+              mb_delim = optarg;
+              delim_specified = true;
+              break;
+            }
           delim = optarg[0];
           delim_specified = true;
           break;
@@ -786,8 +936,16 @@ main (int argc, char **argv)
       static char dummy[2];
       dummy[0] = delim;
       dummy[1] = '\0';
-      output_delimiter_string = dummy;
-      output_delimiter_length = 1;
+      if(mb_delim)
+        {
+          output_delimiter_string = mb_delim;
+          output_delimiter_length = strlen(mb_delim);
+        }
+      else
+        {
+          output_delimiter_string = dummy;
+          output_delimiter_length = 1;
+        }
     }
 
   if (optind == argc)
