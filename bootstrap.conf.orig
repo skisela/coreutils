@@ -154,7 +154,6 @@ gnulib_modules="
   maintainer-makefile
   malloc-gnu
   manywarnings
-  mbbuffer
   mbrlen
   mbrtowc
   mbsalign
@@ -167,7 +166,6 @@ gnulib_modules="
   mempcpy
   memrchr
   mgetgroups
-  minmax
   mkancesdirs
   mkdir
   mkdir-p
@@ -179,7 +177,6 @@ gnulib_modules="
   modechange
   mountlist
   mpsort
-  multibyte
   netinet_in
   non-recursive-gnulib-prefix-hack
   nproc
@@ -259,14 +256,7 @@ gnulib_modules="
   tzset
   uname
   unicodeio
-  uninorm/filter
-  uninorm/nfc
-  uninorm/nfd
-  uninorm/nfkc
-  uninorm/nfkd
-  uninorm/u8-normalize
   unistd-safer
-  unitypes
   unlink-busy
   unlinkat
   unlocked-io
