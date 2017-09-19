@@ -49,6 +49,10 @@ my $locale = $ENV{LOCALE_FR_UTF8};
 # used in multiple tests, below
 my $in_bn = "abc\xF0\x90\x8C\xBBdefg";
 
+my $prog = 'cut';
+my $try = "Try '$prog --help' for more information.\n";
+my $only_1_delim = "$prog: the delimiter must be a single character\n$try";
+
 my @Tests =
   (
    # baseline: single-byte characters
@@ -243,6 +247,63 @@ my @Tests =
 
    # TODO: '-n -b' with test multiple ranges, test with "--output-delimiter"
 
+   # Multibyte delimeter tests
+   # THORN WITH STROKE  (U+A764) - 3 octets: \xEA\x9D\xA4
+   ['mbd-newline-4', "-d'\x{EA}\x{9D}\x{A4}'", '-f1', {IN=>"a\xEA\x9D\xA41\nb\xEA\x9D\xA42"}, {OUT=>"a\nb\n"}],
+   ['mbd-newline-5', "-d'\x{EA}\x{9D}\x{A4}'", '-f2', {IN=>"a\xEA\x9D\xA41\nb\xEA\x9D\xA42\n"}, {OUT=>"1\n2\n"}],
+   ['mbd-newline-6', "-d'\x{EA}\x{9D}\x{A4}'", '-f2', {IN=>"a\xEA\x9D\xA41\nb\xEA\x9D\xA42"}, {OUT=>"1\n2\n"}],
+   ['mbd-newline-7', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f1', {IN=>"a\xEA\x9D\xA41\nb\xEA\x9D\xA42"}, {OUT=>"a\nb\n"}],
+   ['mbd-newline-8', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f1', {IN=>"a\xEA\x9D\xA41\nb\xEA\x9D\xA42\n"}, {OUT=>"a\nb\n"}],
+   ['mbd-newline-9', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f1', {IN=>"a1\nb2"}, {OUT=>""}],
+   ['mbd-newline-10', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f1,2', {IN=>"a\xEA\x9D\xA41\nb\xEA\x9D\xA42"}, {OUT=>"a\xEA\x9D\xA41\nb\xEA\x9D\xA42\n"}],
+   ['mbd-newline-11', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f1,2', {IN=>"a\xEA\x9D\xA41\nb\xEA\x9D\xA42\n"}, {OUT=>"a\xEA\x9D\xA41\nb\xEA\x9D\xA42\n"}],
+   ['mbd-newline-12', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f1', {IN=>"a\xEA\x9D\xA41\nb\xEA\x9D\xA4"}, {OUT=>"a\nb\n"}],
+   ['mbd-newline-13', "-d'\x{EA}\x{9D}\x{A4}'", '-f1-', {IN=>"a1\xEA\x9D\xA4\n\xEA\x9D\xA4"}, {OUT=>"a1\xEA\x9D\xA4\n\xEA\x9D\xA4\n"}],
+   ['mbd-newline-22', "-d'\x{EA}\x{9D}\x{A4}'", '-f1-', {IN=>"\nb"}, {OUT=>"\nb\n"}],
+   ['mbd-newline-23', "-d'\n'", '-f1-', "--ou='\x{EA}\x{9D}\x{A4}'", {IN=>"a\nb\n"}, {OUT=>"a\xEA\x9D\xA4b\n"}],
+   ['mbd-newline-24', "-d'\n'", '-f1,2', "--ou='\x{EA}\x{9D}\x{A4}'", {IN=>"a\nb\n"}, {OUT=>"a\xEA\x9D\xA4b\n"}],
+   ['mbd-newline-25', "-d'\x{EA}\x{9D}\x{A4}'", '-f2', {IN=>"a\xEA\x9D\xA4\xEA\x9D\xA41\nb\xEA\x9D\xA42"}, {OUT=>"\n2\n"}],
+   ['mbd-newline-26', "-d'\x{EA}\x{9D}\x{A4}'", '-f3', {IN=>"a\xEA\x9D\xA4\xEA\x9D\xA41\nb\xEA\x9D\xA42"}, {OUT=>"1\n\n"}],
+
+   ['mbd-1', "-d'\x{EA}\x{9D}\x{A4}'", '-f1,3-', {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\n"}, {OUT=>"a\xEA\x9D\xA4c\n"}],
+   ['mbd-2', "-d'\x{EA}\x{9D}\x{A4}'", '-f1,3-', {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\n"}, {OUT=>"a\xEA\x9D\xA4c\n"}],
+   ['mbd-3', "-d'\x{EA}\x{9D}\x{A4}'", "-f2-", {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\n"}, {OUT=>"b\xEA\x9D\xA4c\n"}],
+   ['mbd-4', "-d'\x{EA}\x{9D}\x{A4}'", "-f4", {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\n"}, {OUT=>"\n"}],
+   ['mbd-5', "-d'\x{EA}\x{9D}\x{A4}'", "-f4", {IN=>""}, {OUT=>""}],
+   ['mbd-a', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f3-', {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\n"}, {OUT=>"c\n"}],
+   ['mbd-b', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f2,3', {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\n"}, {OUT=>"b\xEA\x9D\xA4c\n"}],
+   ['mbd-c', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f1,3', {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\n"}, {OUT=>"a\xEA\x9D\xA4c\n"}],
+   # Trailing colon should not be output
+   ['mbd-d', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f1,3', {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\xEA\x9D\xA4\n"}, {OUT=>"a\xEA\x9D\xA4c\n"}],
+   ['mbd-e', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f3-', {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\xEA\x9D\xA4\n"}, {OUT=>"c\xEA\x9D\xA4\n"}],
+   ['mbd-f', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f3-4', {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\xEA\x9D\xA4\n"}, {OUT=>"c\xEA\x9D\xA4\n"}],
+   ['mbd-g', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f3,4', {IN=>"a\xEA\x9D\xA4b\xEA\x9D\xA4c\xEA\x9D\xA4\n"}, {OUT=>"c\xEA\x9D\xA4\n"}],
+
+   # Make sure -s suppresses non-delimited lines
+   ['mbd-h', "-s", "-d'\x{EA}\x{9D}\x{A4}'", '-f2,3', {IN=>"abc\n"}, {OUT=>""}],
+   #
+   ['mbd-i', "-d'\x{EA}\x{9D}\x{A4}'", "-f1-3", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n"}, {OUT=>"\xEA\x9D\xA4\xEA\x9D\xA4\n"}],
+   ['mbd-j', "-d'\x{EA}\x{9D}\x{A4}'", "-f1-4", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n"}, {OUT=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n"}],
+   ['mbd-k', "-d'\x{EA}\x{9D}\x{A4}'", "-f2-3", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n"}, {OUT=>"\xEA\x9D\xA4\n"}],
+   ['mbd-l', "-d'\x{EA}\x{9D}\x{A4}'", "-f2-4", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n"}, {OUT=>"\xEA\x9D\xA4\xEA\x9D\xA4\n"}],
+   ['mbd-m', "-s", "-d'\x{EA}\x{9D}\x{A4}'", "-f1-3", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n"}, {OUT=>"\xEA\x9D\xA4\xEA\x9D\xA4\n"}],
+   ['mbd-n', "-s", "-d'\x{EA}\x{9D}\x{A4}'", "-f1-4", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n"}, {OUT=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n"}],
+   ['mbd-o', "-s", "-d'\x{EA}\x{9D}\x{A4}'", "-f2-3", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n"}, {OUT=>"\xEA\x9D\xA4\n"}],
+   ['mbd-p', "-s", "-d'\x{EA}\x{9D}\x{A4}'", "-f2-4", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n"}, {OUT=>"\xEA\x9D\xA4\xEA\x9D\xA4\n"}],
+   ['mbd-q', "-s", "-d'\x{EA}\x{9D}\x{A4}'", "-f2-4", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n\xEA\x9D\xA4\n"}, {OUT=>"\xEA\x9D\xA4\xEA\x9D\xA4\n\n"}],
+   ['mbd-r', "-s", "-d'\x{EA}\x{9D}\x{A4}'", "-f2-4", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n\xEA\x9D\xA41\n"}, {OUT=>"\xEA\x9D\xA4\xEA\x9D\xA4\n1\n"}],
+   ['mbd-s', "-s", "-d'\x{EA}\x{9D}\x{A4}'", "-f1-4", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n\xEA\x9D\xA4a\n"}, {OUT=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n\xEA\x9D\xA4a\n"}],
+   ['mbd-t', "-s", "-d'\x{EA}\x{9D}\x{A4}'", "-f3-", {IN=>"\xEA\x9D\xA4\xEA\x9D\xA4\xEA\x9D\xA4\n\xEA\x9D\xA41\n"}, {OUT=>"\xEA\x9D\xA4\n\n"}],
+   # Make sure it handles empty input properly.
+   ['mbd-x', '-s', "-d'\x{EA}\x{9D}\x{A4}'", "-f2-4", {IN=>"\xEA\x9D\xA4\n"}, {OUT=>"\n"}],
+
+   ['mbd-zerot-4', "-z", "-d'\x{EA}\x{9D}\x{A4}'", '-f1', {IN=>"a\xEA\x9D\xA41\0b\xEA\x9D\xA42"}, {OUT=>"a\0b\0"}],
+   ['mbd-zerot-5', "-z", "-d'\x{EA}\x{9D}\x{A4}'", '-f1-', {IN=>"a1\xEA\x9D\xA4\0\xEA\x9D\xA4"}, {OUT=>"a1\xEA\x9D\xA4\0\xEA\x9D\xA4\0"}],
+   ['mbd-zerot-6', "-z", "-d ''", '-f1,2', "--ou='\x{EA}\x{9D}\x{A4}'", {IN=>"a\0b\0"}, {OUT=>"a\xEA\x9D\xA4b\0"}],
+
+   # Make sure only one delimiter is possible
+   ['mbd-mul-delim-1', "-d \$'\u00df\u00df'", '-f1',  {IN=>""}, {OUT=>""}, {EXIT=>1}, {ERR=>$only_1_delim}],
+   ['mbd-mul-delim-2', "-d '::'", '-f1', {IN=>""}, {OUT=>""}, {EXIT=>1}, {ERR=>$only_1_delim}],
   );
 
 
@@ -271,9 +332,9 @@ if ($locale ne 'C')
                        {ERR_SUBST => "s/\xe2\x80[\x98\x99]/'/g"});
           }
 
-        # automatically trim newlines, unless using -z.
+        # automatically trim newlines, unless using -z or running mb_delim tests.
         my ($params) = $t->[1];
-        if ($params !~ /-z/)
+        if ($params !~ /-z/ && $tname !~ /^mbd/)
           {
             push @$t, {OUT_SUBST => 's/[\r\n]+$//s'};
           }
